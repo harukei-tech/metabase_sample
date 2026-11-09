@@ -1,0 +1,55 @@
+name: metabase
+
+services:
+  metabase:
+    image: metabase/metabase:${METABASE_VERSION:-v0.65.3.6}
+    container_name: metabase
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${METABASE_PORT:-3000}:3000"
+    extra_hosts:
+      # Linux版Dockerでも host.docker.internal を解決できるようにする
+      - "host.docker.internal:host-gateway"
+    environment:
+      JAVA_TIMEZONE: Asia/Tokyo
+      # アプリケーションDB（設定・質問・ダッシュボードの保存先）
+      MB_DB_TYPE: postgres
+      MB_DB_HOST: postgres
+      MB_DB_PORT: 5432
+      MB_DB_DBNAME: metabase
+      MB_DB_USER: metabase
+      MB_DB_PASS: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      # DB接続情報などの暗号化キー。変更すると保存済みの情報を復号できなくなる
+      MB_ENCRYPTION_SECRET_KEY: ${MB_ENCRYPTION_SECRET_KEY:?Set MB_ENCRYPTION_SECRET_KEY in .env}
+      # Ollama（OpenAI互換API。末尾の /v1 が必要）
+      MB_LLM_OLLAMA_API_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+      # 既定の external-only ではプライベートIP上のOllamaに接続できない
+      MB_LLM_ALLOWED_NETWORKS: ${MB_LLM_ALLOWED_NETWORKS:-allow-private}
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail -s http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: metabase-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: metabase
+      POSTGRES_USER: metabase
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U metabase -d metabase"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
